@@ -18,11 +18,18 @@ import (
 
 func main() {
 	var scrapeInterval int
+	var bindAddr string
 	flag.IntVar(&scrapeInterval, "interval", 120, "Minutes to wait between scrapes")
+	flag.StringVar(&bindAddr, "bind", ":8000", "Address and port to bind to")
 	flag.Parse()
 
 	if scrapeInterval < 1 {
 		fmt.Println("Scraping interval must be at least 1")
+		os.Exit(1)
+	}
+
+	if !strings.ContainsRune(bindAddr, ':') || len(bindAddr) < 2 {
+		fmt.Println("flag 'bind' must be in format 'address:port'. If address is omitted, server will listed on all interfaces.")
 		os.Exit(1)
 	}
 
@@ -51,7 +58,7 @@ func main() {
 
 	srv := &http.Server{
 		Handler:      r,
-		Addr:         ":8000",
+		Addr:         bindAddr,
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
@@ -132,8 +139,6 @@ func (sc scraper) Scrape() ([]*feeds.Item, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("Got %v hacktivity items back", len(resp.Data.HacktivityItems.Edges))
 
 	var parsedItems []*feeds.Item
 	for _, v := range resp.Data.HacktivityItems.Edges {
