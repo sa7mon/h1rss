@@ -2,6 +2,8 @@
 
 An RSS feed generator for HackerOne Hacktivity
 
+Public instance: https://h1rss.badtech.xyz/rss
+
 ## Running
 
 ```
