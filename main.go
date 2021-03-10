@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const VERSION = "v0.1"
+
 func main() {
 	var scrapeInterval int
 	var bindAddr string
@@ -45,8 +47,8 @@ func main() {
 	now := time.Now()
 	feed := &feeds.Feed{
 		Title:       "HackerOne Unofficial Hacktivity RSS Feed",
-		Link:        &feeds.Link{Href: ""},
-		Description: "",
+		Link:        &feeds.Link{Href: "https://github.com/sa7mon/h1rss"},
+		Description: "Feed run by @BLTjetpack",
 		Author:      &feeds.Author{Name: "", Email: ""},
 		Created:     now,
 		Items: rssItems,
@@ -56,6 +58,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc("/rss", RSSHandler)
+	r.HandleFunc("/version", VersionHandler)
 
 	srv := &http.Server{
 		Handler:      r,
@@ -69,6 +72,12 @@ func main() {
 
 	log.Printf("[server] Serving on %v", srv.Addr)
 	log.Fatal(srv.ListenAndServe())
+}
+
+func VersionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(VERSION))
 }
 
 func RSSHandler(w http.ResponseWriter, r *http.Request) {
@@ -210,6 +219,7 @@ func (sc scraper) Scrape() ([]*feeds.Item, error) {
 			Link: 	&feeds.Link{Href: hacktivityItem.Link},
 			Description: description,
 			Author: &feeds.Author{Name: "", Email: ""},
+			Id: hacktivityItem.Link,
 		}
 
 		hacktivityItem.RSSItem = &rssItem
