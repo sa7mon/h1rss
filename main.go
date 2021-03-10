@@ -9,6 +9,7 @@ import (
 	"github.com/gorilla/feeds"
 	"github.com/gorilla/mux"
 	"github.com/sa7mon/h1rss/data"
+	"github.com/sa7mon/h1rss/structs"
 	"log"
 	"net/http"
 	"os"
@@ -64,14 +65,40 @@ func main() {
 	}
 
 	// Spin off scraper to its own thread
-	go s.ScrapeLoop(2)
+	go s.ScrapeLoop(scrapeInterval)
 
 	log.Printf("[server] Serving on %v", srv.Addr)
 	log.Fatal(srv.ListenAndServe())
 }
 
 func RSSHandler(w http.ResponseWriter, r *http.Request) {
+	bounty := r.URL.Query().Get("bounty")
+
+	// Parse query params
+	if bounty != "" {
+		if strings.ToLower(bounty) != "true" && strings.ToLower(bounty) != "false" {
+			Return400("error: parameter 'bounty' can be 'true' or 'false' only\n", w)
+			return
+		}
+	}
+
 	manager := data.GetManager()
+	var rssItemsToReturn []*feeds.Item
+	for _, v := range manager.ScrapedItems {
+		if bounty == "" {
+			rssItemsToReturn = append(rssItemsToReturn, v.RSSItem)
+		} else if bounty == "true" {
+			if v.HasBounty {
+				rssItemsToReturn = append(rssItemsToReturn, v.RSSItem)
+			}
+		} else if bounty == "false" {
+			if !v.HasBounty {
+				rssItemsToReturn = append(rssItemsToReturn, v.RSSItem)
+			}
+		}
+	}
+
+	manager.CurrentFeed.Items = rssItemsToReturn
 	rss, err := manager.CurrentFeed.ToRss()
 	if err != nil {
 		panic(err)
@@ -91,7 +118,7 @@ func NewScraper() scraper {
 
 func (sc scraper) ScrapeLoop(interval int) {
 	keepScraping := true
-	sleepInterval := time.Duration(interval) * time.Minute * 60
+	sleepInterval := time.Duration(interval) * time.Minute
 	manager := data.GetManager()
 	var scrapeError error
 
@@ -113,7 +140,9 @@ func (sc scraper) ScrapeLoop(interval int) {
 	Adapted from: https://gist.github.com/tetrillard/4e1ed77cebb5fab42989da3bf944fd4e
  */
 func (sc scraper) Scrape() ([]*feeds.Item, error) {
-	data := `{"operationName":"HacktivityPageQuery","variables":{"querystring":"","where":{"report":{"disclosed_at":{"_is_null":false}}},"orderBy":null,"secureOrderBy":{"latest_disclosable_activity_at":{"_direction":"DESC"}},"count":10},"query":"query HacktivityPageQuery($querystring: String, $orderBy: HacktivityItemOrderInput, $secureOrderBy: FiltersHacktivityItemFilterOrder, $where: FiltersHacktivityItemFilterInput, $count: Int, $cursor: String) {\n  hacktivity_items(first: $count, after: $cursor, query: $querystring, order_by: $orderBy, secure_order_by: $secureOrderBy, where: $where) {\n    ...HacktivityList\n  }\n}\n\nfragment HacktivityList on HacktivityItemConnection {\n    edges {\n    node {\n      ... on HacktivityItemInterface {\n        ...HacktivityItem\n      }\n    }\n  }\n}\n\nfragment HacktivityItem on HacktivityItemUnion {\n  ... on Undisclosed {\n    id\n    ...HacktivityItemUndisclosed\n  }\n  ... on Disclosed {\n    ...HacktivityItemDisclosed\n  }\n  ... on HackerPublished {\n    ...HacktivityItemHackerPublished\n  }\n}\n\nfragment HacktivityItemUndisclosed on Undisclosed {\n  reporter {\n    username\n    ...UserLinkWithMiniProfile\n  }\n  team {\n    handle\n    name\n     url\n    ...TeamLinkWithMiniProfile\n  }\n  latest_disclosable_action\n  latest_disclosable_activity_at\n  requires_view_privilege\n  total_awarded_amount\n  currency\n}\n\nfragment TeamLinkWithMiniProfile on Team {\n  handle\n  name\n }\n\nfragment UserLinkWithMiniProfile on User {\n  username\n}\n\nfragment HacktivityItemDisclosed on Disclosed {\n  reporter {\n    username\n    ...UserLinkWithMiniProfile\n  }\n  team {\n    handle\n    name\n    url\n    ...TeamLinkWithMiniProfile\n  }\n  report {\n    title\n    substate\n    url\n  }\n  latest_disclosable_activity_at\n  total_awarded_amount\n  severity_rating\n  currency\n}\n\nfragment HacktivityItemHackerPublished on HackerPublished {\n  reporter {\n    username\n    ...UserLinkWithMiniProfile\n  }\n  team {\n    handle\n    name\n    medium_profile_picture: profile_picture(size: medium)\n    url\n    ...TeamLinkWithMiniProfile\n  }\n  report {\n    url\n    title\n    substate\n  }\n  latest_disclosable_activity_at\n  severity_rating\n}\n"}`
+	manager := data.GetManager()
+
+	data := `{"operationName":"HacktivityPageQuery","variables":{"querystring":"","where":{"report":{"disclosed_at":{"_is_null":false}}},"orderBy":null,"secureOrderBy":{"latest_disclosable_activity_at":{"_direction":"DESC"}},"count":50},"query":"query HacktivityPageQuery($querystring: String, $orderBy: HacktivityItemOrderInput, $secureOrderBy: FiltersHacktivityItemFilterOrder, $where: FiltersHacktivityItemFilterInput, $count: Int, $cursor: String) {\n  hacktivity_items(first: $count, after: $cursor, query: $querystring, order_by: $orderBy, secure_order_by: $secureOrderBy, where: $where) {\n    ...HacktivityList\n  }\n}\n\nfragment HacktivityList on HacktivityItemConnection {\n    edges {\n    node {\n      ... on HacktivityItemInterface {\n        ...HacktivityItem\n      }\n    }\n  }\n}\n\nfragment HacktivityItem on HacktivityItemUnion {\n  ... on Undisclosed {\n    id\n    ...HacktivityItemUndisclosed\n  }\n  ... on Disclosed {\n    ...HacktivityItemDisclosed\n  }\n  ... on HackerPublished {\n    ...HacktivityItemHackerPublished\n  }\n}\n\nfragment HacktivityItemUndisclosed on Undisclosed {\n  reporter {\n    username\n    ...UserLinkWithMiniProfile\n  }\n  team {\n    handle\n    name\n     url\n    ...TeamLinkWithMiniProfile\n  }\n  latest_disclosable_action\n  latest_disclosable_activity_at\n  requires_view_privilege\n  total_awarded_amount\n  currency\n}\n\nfragment TeamLinkWithMiniProfile on Team {\n  handle\n  name\n }\n\nfragment UserLinkWithMiniProfile on User {\n  username\n}\n\nfragment HacktivityItemDisclosed on Disclosed {\n  reporter {\n    username\n    ...UserLinkWithMiniProfile\n  }\n  team {\n    handle\n    name\n    url\n    ...TeamLinkWithMiniProfile\n  }\n  report {\n    title\n    substate\n    url\n  }\n  latest_disclosable_activity_at\n  total_awarded_amount\n  severity_rating\n  currency\n}\n\nfragment HacktivityItemHackerPublished on HackerPublished {\n  reporter {\n    username\n    ...UserLinkWithMiniProfile\n  }\n  team {\n    handle\n    name\n    medium_profile_picture: profile_picture(size: medium)\n    url\n    ...TeamLinkWithMiniProfile\n  }\n  report {\n    url\n    title\n    substate\n  }\n  latest_disclosable_activity_at\n  severity_rating\n}\n"}`
 	data = strings.Replace(data, "\n", "\\n", -1)
 
 	request, err := http.NewRequest("POST", "https://hackerone.com/graphql", bytes.NewBuffer([]byte(data)))
@@ -132,7 +161,7 @@ func (sc scraper) Scrape() ([]*feeds.Item, error) {
 	if response.StatusCode != 200 {
 		return nil, errors.New(fmt.Sprintf("status code error: %d %s", response.StatusCode, response.Status))
 	}
-	var resp h1GraphResponse
+	var resp structs.H1GraphResponse
 
 	decoder := json.NewDecoder(response.Body)
 	err = decoder.Decode(&resp)
@@ -140,61 +169,61 @@ func (sc scraper) Scrape() ([]*feeds.Item, error) {
 		return nil, err
 	}
 
-	var parsedItems []*feeds.Item
+	var hacktivityItems []structs.HacktivityItem
 	for _, v := range resp.Data.HacktivityItems.Edges {
-		var item feeds.Item
-		var title string
+		hacktivityItem := structs.HacktivityItem{Title: v.Node.Report.Title, ReportedBy: v.Node.Reporter.Username,
+			ReportedTo: v.Node.Team.Name, Link: v.Node.Report.URL, State: v.Node.Report.Substate,
+			LastUpdate: v.Node.LatestDisclosableActivityAt}
 
 		if v.Node.TotalAwardedAmount != 0.00 {
-			title = fmt.Sprintf("[%v] [%v %v]", v.Node.Team.Name, v.Node.TotalAwardedAmount, v.Node.Currency)
+			hacktivityItem.HasBounty = true
+			hacktivityItem.Bounty = fmt.Sprintf("%v %v", v.Node.TotalAwardedAmount, v.Node.Currency)
 		} else {
-			title = fmt.Sprintf("[%v]", v.Node.Team.Name)
+			hacktivityItem.HasBounty = false
 		}
 
 		severity := fmt.Sprintf("%v", v.Node.SeverityRating)
-		if severity != "none" && severity != "<nil>" {
-			title = fmt.Sprintf("%v [%v]", title, v.Node.SeverityRating)
+		if severity == "<nil>" || severity == "none" {
+			hacktivityItem.Severity = ""
+		} else {
+			hacktivityItem.Severity = severity
 		}
 
-		title = fmt.Sprintf("%v %v", title, v.Node.Report.Title)
+		// Create RSS Item
+		var rssItem feeds.Item
+		var title string
 
-		item = feeds.Item{
+		if hacktivityItem.HasBounty {
+			title = fmt.Sprintf("[%v] [%v]", hacktivityItem.ReportedTo, hacktivityItem.Bounty)
+		} else {
+			title = fmt.Sprintf("[%v]", hacktivityItem.ReportedTo)
+			hacktivityItem.Bounty = "(none)"
+		}
+
+		title = fmt.Sprintf("%v %v", title, hacktivityItem.Title)
+		description := fmt.Sprintf("<ul><li>Title: %v</li><li>Severity: %v</li><li>State: %v</li><li>Reported to: %v</li><li>Reported by: %v</li><li>Bounty: %v</li></ul>",
+			hacktivityItem.Title, hacktivityItem.Severity, hacktivityItem.State, hacktivityItem.ReportedTo, hacktivityItem.ReportedBy, hacktivityItem.Bounty)
+
+		rssItem = feeds.Item{
 			Title: title,
-			Updated: v.Node.LatestDisclosableActivityAt,
-			Link: 	&feeds.Link{Href: v.Node.Report.URL},
-			Description: "",
+			Updated: hacktivityItem.LastUpdate,
+			Link: 	&feeds.Link{Href: hacktivityItem.Link},
+			Description: description,
 			Author: &feeds.Author{Name: "", Email: ""},
 		}
-		parsedItems = append(parsedItems, &item)
+
+		hacktivityItem.RSSItem = &rssItem
+
+		hacktivityItems = append(hacktivityItems, hacktivityItem)
 	}
 
+	manager.ScrapedItems = hacktivityItems
+
+	var parsedItems []*feeds.Item
 	return parsedItems, nil
 }
 
-type h1GraphResponse struct {
-	Data struct {
-		HacktivityItems struct {
-			Edges []struct {
-				Node struct {
-					Reporter struct {
-						Username string `json:"username"`
-					} `json:"reporter"`
-					Team struct {
-						Handle string `json:"handle"`
-						Name   string `json:"name"`
-						URL    string `json:"url"`
-					} `json:"team"`
-					Report struct {
-						Title    string `json:"title"`
-						Substate string `json:"substate"`
-						URL      string `json:"url"`
-					} `json:"report"`
-					LatestDisclosableActivityAt time.Time      `json:"latest_disclosable_activity_at"`
-					TotalAwardedAmount          float64        `json:"total_awarded_amount"`
-					SeverityRating              interface{} `json:"severity_rating"`
-					Currency                    string         `json:"currency"`
-				} `json:"node"`
-			} `json:"edges"`
-		} `json:"hacktivity_items"`
-	} `json:"data"`
+func Return400(message string, w http.ResponseWriter) {
+	w.WriteHeader(400)
+	w.Write([]byte(message))
 }
