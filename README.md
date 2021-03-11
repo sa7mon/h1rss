@@ -26,11 +26,16 @@ By default, the HTTP server will listen on port 8000 for requests to `/rss`
 
 The items can be filtered via query parameters:
 
-* **bounty**
-    * true
-    * false
+* **bounty** (one of the following)
+  * true
+  * false
+* **state** (pipe-separated list)
+  * duplicate
+  * informative
+  * not-applicable
+  * resolved
 
-Example: `http://localhost:8000/rss?bounty=true`
+Example: `http://localhost:8000/rss?bounty=true&state=resolved|informative`
 
 ## License
 
