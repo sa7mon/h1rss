@@ -9,6 +9,7 @@ import (
 type DataManager struct {
 	CurrentFeed *feeds.Feed
 	ScrapedItems []structs.HacktivityItem
+	AllowedState []string
 }
 
 var once sync.Once
@@ -16,7 +17,7 @@ var instance DataManager
 
 func GetManager() *DataManager {
 	once.Do(func() { 			// atomic, do only once
-		instance = DataManager{}
+		instance = DataManager{AllowedState: []string{"duplicate", "informative", "not-applicable", "resolved"}}
 	})
 
 	return &instance

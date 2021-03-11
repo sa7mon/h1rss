@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -81,7 +82,11 @@ func VersionHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func RSSHandler(w http.ResponseWriter, r *http.Request) {
+	manager := data.GetManager()
+
 	bounty := r.URL.Query().Get("bounty")
+	stateParam := r.URL.Query().Get("state")
+	var states []string
 
 	// Parse query params
 	if bounty != "" {
@@ -90,20 +95,50 @@ func RSSHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if stateParam != "" {
+		splitState := strings.Split(stateParam, "|")
 
-	manager := data.GetManager()
+		for _, v := range splitState {
+			if v == "" {
+				continue
+			}
+			if StringInSortedSlice(manager.AllowedState, v) {
+				states = append(states, v)
+			} else {
+				Return400("error: parameter 'state' only allows the following values: 'duplicate', 'informative', 'not-applicable', 'resolved'\n", w)
+				return
+			}
+		}
+	}
+
+	sort.Slice(states, func(i, j int) bool { return states[i] < states[j] })
+
 	var rssItemsToReturn []*feeds.Item
 	for _, v := range manager.ScrapedItems {
+		returnItem := false
+
 		if bounty == "" {
-			rssItemsToReturn = append(rssItemsToReturn, v.RSSItem)
+			returnItem = true
 		} else if bounty == "true" {
 			if v.HasBounty {
-				rssItemsToReturn = append(rssItemsToReturn, v.RSSItem)
+				returnItem = true
 			}
 		} else if bounty == "false" {
 			if !v.HasBounty {
-				rssItemsToReturn = append(rssItemsToReturn, v.RSSItem)
+				returnItem = true
 			}
+		}
+
+		if states != nil && len(states) > 0 {
+			if StringInSortedSlice(states, strings.ToLower(v.State)) {
+				returnItem = true
+			} else {
+				returnItem = false
+			}
+		}
+
+		if returnItem {
+			rssItemsToReturn = append(rssItemsToReturn, v.RSSItem)
 		}
 	}
 
@@ -236,4 +271,12 @@ func (sc scraper) Scrape() ([]*feeds.Item, error) {
 func Return400(message string, w http.ResponseWriter) {
 	w.WriteHeader(400)
 	w.Write([]byte(message))
+}
+
+func StringInSortedSlice(slice []string, s string) bool {
+	i := sort.SearchStrings(slice, s)
+	if len(slice) == i {
+		return false
+	}
+	return slice[i] == s
 }
